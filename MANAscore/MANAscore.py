@@ -1,3 +1,5 @@
+mport argparse
+import os
 import pandas as pd
 import pickle
 import gzip
@@ -6,16 +8,18 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import GridSearchCV, train_test_split, cross_val_score
 from sklearn.metrics import roc_auc_score
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 class MANAscore:
     def __init__(self):
         # Define internal file paths for training data
         self.file_paths = [
-            './3gene/training/p2_known.csv',
-            './3gene/training/p2_known_RNA.csv',
-            './3gene/training/p11_known.csv',
-            './3gene/training/p11_known_RNA.csv',
-            './3gene/training/p15_known.csv',
-            './3gene/training/p15_known_RNA.csv'
+            os.path.join(BASE_DIR, '3gene/training/p2_known.csv'),
+            os.path.join(BASE_DIR, '3gene/training/p2_known_RNA.csv'),
+            os.path.join(BASE_DIR, '3gene/training/p11_known.csv'),
+            os.path.join(BASE_DIR, '3gene/training/p11_known_RNA.csv'),
+            os.path.join(BASE_DIR, '3gene/training/p15_known.csv'),
+            os.path.join(BASE_DIR, '3gene/training/p15_known_RNA.csv')
         ]
         # Initialize attributes for models, classifiers, and data splits
         self.LM_models = []
@@ -69,7 +73,7 @@ class MANAscore:
 
     def create_and_fit_voting_classifiers(self):
         """Create and fit voting classifiers for imputed and non-imputed models."""
-        
+
         # Extract only label and model pairs for creating voting classifiers
         lm_dict = {label: model for label, model in self.LM_models}
         rf_dict = {label: model for label, model in self.RF_models}
@@ -86,11 +90,11 @@ class MANAscore:
             ],
             voting='soft'
         )
-        
+
         # Combine all imputed training data (indices 0, 2, 4) and labels
         X_train_i = pd.concat([self.X_train_list[idx] for idx in [0, 2, 4]])
         y_train_i = pd.concat([self.y_train_list[idx] for idx in [0, 2, 4]])
-        
+
         # Fit the imputed classifier
         self.voting_i_classifier.fit(X_train_i, y_train_i)
 
@@ -106,14 +110,14 @@ class MANAscore:
             ],
             voting='soft'
         )
-        
+
         # Combine all non-imputed training data (indices 1, 3, 5) and labels
         X_train_ni = pd.concat([self.X_train_list[idx] for idx in [1, 3, 5]])
         y_train_ni = pd.concat([self.y_train_list[idx] for idx in [1, 3, 5]])
-        
+
         # Fit the non-imputed classifier
         self.voting_ni_classifier.fit(X_train_ni, y_train_ni)
-    
+
     def fit_models(self):
         # Combine all imputed training data (indices 0, 2, 4) and labels
         X_train_i = pd.concat([self.X_train_list[idx] for idx in [0, 2, 4]])
@@ -128,7 +132,7 @@ class MANAscore:
 
         # Fit the non-imputed classifier
         self.voting_ni_classifier.fit(X_train_ni, y_train_ni)
-    
+
     def save_voting_models(self):
         """Save the fitted voting classifiers to compressed .pkl.gz files."""
         with gzip.open('voting_i_classifier.pkl.gz', 'wb') as f:
@@ -138,16 +142,16 @@ class MANAscore:
 
     def load_voting_models(self):
         """Load the compressed .pkl.gz voting classifiers."""
-        with gzip.open('./models/voting_i_classifier.pkl.gz', 'rb') as f:
+        with gzip.open(os.path.join(BASE_DIR, 'models/voting_i_classifier.pkl.gz'), 'rb') as f:
             self.voting_i_classifier = pickle.load(f)
-        with gzip.open('./models/voting_ni_classifier.pkl.gz', 'rb') as f:
+        with gzip.open(os.path.join(BASE_DIR, 'models/voting_ni_classifier.pkl.gz'), 'rb') as f:
             self.voting_ni_classifier = pickle.load(f)
 
     def evaluate_classifiers(self):
         """Evaluate both voting classifiers on combined imputed and non-imputed test data and return AUC scores."""
         if self.voting_i_classifier is None or self.voting_ni_classifier is None:
             raise ValueError("Voting classifiers must be created before evaluation. Call create_voting_classifiers() first.")
-    
+
         # Check if test lists have enough data for expected indices
         required_indices_i = [0, 2, 4]
         required_indices_ni = [1, 3, 5]
@@ -159,15 +163,15 @@ class MANAscore:
             print(f"X_test_list length: {len(self.X_test_list)}, expected indices: {required_indices_i + required_indices_ni}")
             print(f"y_test_list length: {len(self.y_test_list)}, expected indices: {required_indices_i + required_indices_ni}")
             return None, None
-    
+
         # Combine all imputed test data (indices 0, 2, 4) and labels
         X_test_i = pd.concat([self.X_test_list[idx] for idx in required_indices_i])
         y_test_i = pd.concat([self.y_test_list[idx] for idx in required_indices_i])
-    
+
         # Combine all non-imputed test data (indices 1, 3, 5) and labels
         X_test_ni = pd.concat([self.X_test_list[idx] for idx in required_indices_ni])
         y_test_ni = pd.concat([self.y_test_list[idx] for idx in required_indices_ni])
-    
+
         # Evaluate the combined imputed data with the imputed voting classifier
         try:
             auc_i = roc_auc_score(y_test_i, self.voting_i_classifier.predict_proba(X_test_i)[:, 1])
@@ -181,10 +185,10 @@ class MANAscore:
         except Exception as e:
             print(f"Error evaluating non-imputed classifier: {e}")
             auc_ni = None
-    
+
         print(f"Imputed Classifier AUC on Combined Data: {auc_i}")
         print(f"Non-Imputed Classifier AUC on Combined Data: {auc_ni}")
-    
+
         return auc_i, auc_ni
 
 
@@ -218,17 +222,17 @@ class MANAscore:
 def main():
     parser = argparse.ArgumentParser(description="MANAscore Tool")
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
-        
+
     train_parser = subparsers.add_parser("train", help="Train and save models")
     train_parser.add_argument("--save_models", action="store_true", help="Save trained models after training")
-        
+
     load_parser = subparsers.add_parser("load", help="Load saved models")
     predict_parser = subparsers.add_parser("predict", help="Predict MANAscore using loaded models")
     predict_parser.add_argument("input_file_i", help="Path to input file for imputed classifier")
     predict_parser.add_argument("input_file_ni", help="Path to input file for non-imputed classifier")
     predict_parser.add_argument("output_file_i", help="Path to save output file for imputed classifier")
     predict_parser.add_argument("output_file_ni", help="Path to save output file for non-imputed classifier")
-        
+
     args = parser.parse_args()
     manascore = MANAscore()
     if args.command == "train":
@@ -236,26 +240,24 @@ def main():
         manascore.train_logistic_models()
         manascore.train_random_forest_models()
         manascore.create_and_fit_voting_classifiers()
-        
-        
+
+
         if args.save_models:
-            manasmanascore.save_voting_models()
+            manascore.save_voting_models()
             print("Models saved successfully.")
 
     elif args.command == "load":
         print("Loading saved models...")
         manascore.load_voting_models()
         print("Models loaded successfully.")
-    
+
     elif args.command == "predict":
         print(f"Predicting scores for {args.input_file_i} and {args.input_file_ni}...")
         if manascore.voting_i_classifier is None or manascore.voting_ni_classifier is None:
             manascore.load_voting_models()
-        
+
         manascore.predict_and_save_both(args.input_file_i, args.input_file_ni, args.output_file_i, args.output_file_ni)
     else:
         parser.print_help()
 if __name__ == "__main__":
     main()
-
-
